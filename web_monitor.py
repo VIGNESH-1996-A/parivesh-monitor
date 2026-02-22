@@ -64,7 +64,8 @@ HTML_PAGE = """
     <div class="alert" style="border-color: #ef4444;"><strong>Error:</strong> {{ last_error }}</div>
     {% endif %}
     <p class="meta" style="margin-top: 16px;">
-      <a href="https://environmentclearance.nic.in/report/meeting_schedule.aspx" target="_blank">Open PARIVESH portal</a>
+      <a href="https://parivesh.nic.in/#/ec-agenda-list" target="_blank">EC Agenda (PARIVESH 2.0)</a><br>
+      <a href="https://parivesh.nic.in/#/ec-mom-list" target="_blank">EC MoM (PARIVESH 2.0)</a>
     </p>
   </div>
 </body>

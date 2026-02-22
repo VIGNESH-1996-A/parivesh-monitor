@@ -1,15 +1,17 @@
-# PARIVESH EC Agenda & MoM SMS Notifications
+# PARIVESH 2.0 EC Agenda & MoM SMS Notifications
 
-Sends an **SMS to 9940944929** whenever a new **Agenda** or **Minutes of Meeting (MoM)** for Environmental Clearance is updated on the PARIVESH portal for:
+Sends an **SMS to 9940944929** whenever a new **Agenda** or **Minutes of Meeting (MoM)** for Environmental Clearance is updated on **PARIVESH 2.0** for:
 
 - **Tamil Nadu**
 - **Karnataka**
 - **Telangana**
 
+**Sources:** [EC Agenda list](https://parivesh.nic.in/#/ec-agenda-list) and [EC MoM list](https://parivesh.nic.in/#/ec-mom-list) on [parivesh.nic.in](https://parivesh.nic.in).
+
 ## How it works
 
-1. The script periodically fetches the state-wise meeting schedule pages on [environmentclearance.nic.in](https://environmentclearance.nic.in) for the three states.
-2. It compares the current page content (and agenda/MoM links) with the last saved state.
+1. The script periodically fetches the PARIVESH 2.0 pages (agenda and MoM lists) and looks for new or changed content.
+2. It filters for Tamil Nadu, Karnataka, and Telangana and compares with the last saved state.
 3. If it detects a change (new or updated agenda/MoM), it sends an SMS to your number via Twilio.
 
 ## Setup

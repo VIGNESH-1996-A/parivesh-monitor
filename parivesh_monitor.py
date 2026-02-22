@@ -1,20 +1,20 @@
 """
-PARIVESH EC Agenda & MoM Monitor.
-Checks for new agenda / Minutes of Meeting on PARIVESH for Tamil Nadu, Karnataka, Telangana
-and sends SMS to the configured phone number.
+PARIVESH 2.0 EC Agenda & MoM Monitor.
+Sources: https://parivesh.nic.in/#/ec-agenda-list and https://parivesh.nic.in/#/ec-mom-list
+Filters for Tamil Nadu, Karnataka, Telangana and sends SMS when new agenda or MoM is detected.
 """
 from __future__ import annotations
 
-import json
 import hashlib
+import json
+import re
 from pathlib import Path
+from typing import Any, List, Optional
 from urllib.parse import urljoin
-from typing import Optional
 
 import requests
 from bs4 import BeautifulSoup
 
-# Load .env if present
 try:
     from dotenv import load_dotenv
     load_dotenv()
@@ -22,9 +22,11 @@ except ImportError:
     pass
 
 from config import (
+    AGENDA_LIST_URL,
+    MOM_LIST_URL,
+    BASE_URL,
     PHONE_NUMBER,
     STATES_TO_MONITOR,
-    get_state_meeting_url,
     STATE_FILE,
     TWILIO_ACCOUNT_SID,
     TWILIO_AUTH_TOKEN,
@@ -37,7 +39,7 @@ SESSION.headers.update({"User-Agent": USER_AGENT})
 
 
 def fetch_page(url: str) -> Optional[str]:
-    """Fetch HTML of a URL. Returns None on failure."""
+    """Fetch HTML/JSON from URL. Returns None on failure."""
     try:
         r = SESSION.get(url, timeout=30)
         r.raise_for_status()
@@ -47,40 +49,83 @@ def fetch_page(url: str) -> Optional[str]:
         return None
 
 
-def extract_agenda_mom_links(html: str, base_url: str) -> list:
-    """
-    Extract links that look like agenda or MoM (minutes) from the page.
-    Returns list of {"href": ..., "text": ...}.
-    """
-    if not html:
-        return []
-    soup = BeautifulSoup(html, "html.parser")
-    links = []
-    for a in soup.find_all("a", href=True):
-        href = (a.get("href") or "").strip()
-        text = (a.get_text() or "").strip()
-        href_lower = href.lower()
-        text_lower = text.lower()
-        # Match agenda, minutes, MoM, PDFs often used for agenda/MoM
-        if any(
-            x in href_lower or x in text_lower
-            for x in ("agenda", "minutes", "mom", "minute", "meeting", "schedule")
-        ) or (href_lower.endswith(".pdf") and ("agenda" in text_lower or "minute" in text_lower or "meeting" in text_lower)):
-            full_url = urljoin(base_url, href) if not href.startswith("http") else href
-            links.append({"href": full_url, "text": text[:200]})
-    return links
+def try_fetch_json(url: str) -> Optional[Any]:
+    """Try to fetch URL as JSON. Returns parsed dict/list or None."""
+    try:
+        r = SESSION.get(url, timeout=15)
+        if r.status_code != 200:
+            return None
+        return r.json()
+    except Exception:
+        return None
 
 
 def content_fingerprint(html: str) -> str:
-    """Simple hash of relevant content for change detection."""
+    """Hash of page content for change detection."""
     if not html:
         return ""
-    # Normalize: strip script/style and extra whitespace
     soup = BeautifulSoup(html, "html.parser")
     for tag in soup(["script", "style"]):
         tag.decompose()
     text = soup.get_text(separator=" ", strip=True)
     return hashlib.sha256(text.encode("utf-8", errors="ignore")).hexdigest()
+
+
+def extract_embedded_json(html: str) -> Optional[Any]:
+    """Try to find JSON in script tags (e.g. __NEXT_DATA__, window.__STATE__)."""
+    if not html:
+        return None
+    # Common SPA patterns: id="__NEXT_DATA__", type="application/json", window.__INITIAL_STATE__
+    soup = BeautifulSoup(html, "html.parser")
+    for script in soup.find_all("script", type="application/json"):
+        try:
+            return json.loads(script.string or "{}")
+        except Exception:
+            continue
+    for script in soup.find_all("script", id=re.compile(r"__.*DATA__|__.*STATE__", re.I)):
+        try:
+            return json.loads(script.string or "{}")
+        except Exception:
+            continue
+    return None
+
+
+def items_mention_states(text: str) -> bool:
+    """True if text mentions any of our monitored states."""
+    if not text:
+        return False
+    t = text.lower()
+    return any(s.lower() in t for s in STATES_TO_MONITOR)
+
+
+def extract_rows_for_states(html: str, base_url: str) -> List[dict]:
+    """
+    Extract table rows or list items that mention Tamil Nadu, Karnataka, or Telangana.
+    Returns list of {"state": ..., "text": ..., "href": ...} for change detection.
+    """
+    if not html:
+        return []
+    soup = BeautifulSoup(html, "html.parser")
+    out = []
+    for tag in soup.find_all(["tr", "li", "div"], class_=re.compile(r"row|item|list|card", re.I)) or soup.find_all("tr"):
+        text = (tag.get_text() or "").strip()
+        if not items_mention_states(text):
+            continue
+        href = ""
+        a = tag.find("a", href=True)
+        if a:
+            href = urljoin(base_url, a["href"]) if not (a["href"].startswith("http") or a["href"].startswith("#")) else a["href"]
+        state = next((s for s in STATES_TO_MONITOR if s.lower() in text.lower()), "")
+        out.append({"state": state, "text": text[:150], "href": href})
+    # Also collect any link whose text or href mentions agenda/mom and state
+    for a in soup.find_all("a", href=True):
+        text = (a.get_text() or "").strip()
+        href = a.get("href") or ""
+        if items_mention_states(text) or items_mention_states(href):
+            full_url = urljoin(base_url, href) if not (href.startswith("http") or href.startswith("#")) else href
+            state = next((s for s in STATES_TO_MONITOR if s.lower() in (text + href).lower()), "")
+            out.append({"state": state, "text": text[:150] or href[:80], "href": full_url})
+    return out
 
 
 def load_last_state() -> dict:
@@ -101,9 +146,9 @@ def save_last_state(state: dict) -> None:
 
 
 def send_sms(body: str) -> bool:
-    """Send SMS via Twilio. Returns True if sent successfully."""
+    """Send SMS via Twilio."""
     if not all([TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, TWILIO_FROM_NUMBER]):
-        print("SMS skipped: set TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, TWILIO_FROM_NUMBER in .env")
+        print("SMS skipped: set Twilio env vars in .env")
         return False
     to_number = PHONE_NUMBER if PHONE_NUMBER.startswith("+") else f"+{PHONE_NUMBER}"
     try:
@@ -118,43 +163,81 @@ def send_sms(body: str) -> bool:
 
 
 def run_check() -> None:
-    """Check all three states for new agenda/MoM and send SMS if something new."""
+    """
+    Check PARIVESH 2.0 agenda and MoM pages for new content for TN, Karnataka, Telangana.
+    Uses page fingerprinting and optional embedded/API data.
+    """
     last = load_last_state()
     new_highlights = []
-    current_state = {}
 
-    for state in STATES_TO_MONITOR:
-        name = state["name"]
-        state_id = state["state_id"]
-        url = get_state_meeting_url(state_id)
-        html = fetch_page(url)
-        if not html:
-            current_state[name] = last.get(name, {})
-            continue
+    # PARIVESH 2.0 SPA: server typically serves same HTML for all routes; fragment is client-side.
+    # Fetch main page (agenda and mom content may be loaded by JS from same or different API).
+    agenda_html = fetch_page(BASE_URL)
+    mom_html = fetch_page(BASE_URL)  # Same base; SPA uses hash to show agenda vs mom
 
-        fingerprint = content_fingerprint(html)
-        links = extract_agenda_mom_links(html, url)
-        prev = last.get(name, {})
-        prev_fp = prev.get("fingerprint", "")
-        prev_links = prev.get("links", [])
+    # Also try path-based URLs in case server has SSR or different endpoints
+    agenda_alt = fetch_page(BASE_URL + "/ec-agenda-list")
+    mom_alt = fetch_page(BASE_URL + "/ec-mom-list")
 
-        current_state[name] = {"fingerprint": fingerprint, "links": links}
+    agenda_html = agenda_html or agenda_alt
+    mom_html = mom_html or mom_alt
 
-        # New if fingerprint changed or new links appeared
-        new_links = [l for l in links if l not in prev_links]
-        if fingerprint != prev_fp or new_links:
-            msg = f"PARIVESH: New update for {name} (EC Agenda/MoM)."
-            if new_links:
-                msg += f" New links: {new_links[0].get('href', '')[:80]}..."
-            new_highlights.append(msg)
+    agenda_fp = content_fingerprint(agenda_html or "")
+    mom_fp = content_fingerprint(mom_html or "")
 
-    save_last_state(current_state)
+    agenda_items = extract_rows_for_states(agenda_html or "", BASE_URL)
+    mom_items = extract_rows_for_states(mom_html or "", BASE_URL)
+
+    # Try common API patterns (no guarantee PARIVESH exposes these)
+    for path in ["/api/ec/agenda", "/api/ec/mom", "/parivesh/api/ec-agenda-list", "/parivesh/api/ec-mom-list"]:
+        data = try_fetch_json(BASE_URL + path)
+        if data and isinstance(data, list) and len(data) > 0:
+            for row in data:
+                if isinstance(row, dict):
+                    row_text = json.dumps(row)[:200]
+                else:
+                    row_text = str(row)[:200]
+                if items_mention_states(row_text):
+                    if "agenda" in path.lower():
+                        agenda_items.append({"state": "", "text": row_text, "href": ""})
+                    else:
+                        mom_items.append({"state": "", "text": row_text, "href": ""})
+
+    prev_agenda_fp = last.get("agenda_fingerprint", "")
+    prev_mom_fp = last.get("mom_fingerprint", "")
+    prev_agenda_items = last.get("agenda_items", [])
+    prev_mom_items = last.get("mom_items", [])
+
+    current = {
+        "agenda_fingerprint": agenda_fp,
+        "mom_fingerprint": mom_fp,
+        "agenda_items": agenda_items,
+        "mom_items": mom_items,
+    }
+    save_last_state(current)
+
+    # Detect new: fingerprint changed or new items for our states
+    new_agenda = agenda_fp != prev_agenda_fp or any(
+        i not in prev_agenda_items for i in agenda_items
+    )
+    new_mom = mom_fp != prev_mom_fp or any(
+        i not in prev_mom_items for i in mom_items
+    )
+
+    if new_agenda:
+        new_highlights.append(
+            "PARIVESH 2.0: New EC Agenda (TN/Karnataka/Telangana). Check: " + AGENDA_LIST_URL
+        )
+    if new_mom:
+        new_highlights.append(
+            "PARIVESH 2.0: New EC MoM (TN/Karnataka/Telangana). Check: " + MOM_LIST_URL
+        )
 
     if new_highlights:
-        body = " | ".join(new_highlights)[:1600]  # Twilio single SMS length limit
+        body = " | ".join(new_highlights)[:1600]
         send_sms(body)
     else:
-        print("No new agenda/MoM updates detected.")
+        print("No new agenda/MoM updates detected for TN, KA, TS.")
 
 
 if __name__ == "__main__":
