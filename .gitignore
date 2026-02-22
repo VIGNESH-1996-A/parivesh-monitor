@@ -1,0 +1,6 @@
+.env
+parivesh_last_state.json
+__pycache__/
+*.pyc
+.venv/
+venv/

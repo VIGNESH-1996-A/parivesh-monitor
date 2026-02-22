@@ -1,0 +1,19 @@
+# Render.com blueprint - 24/7 PARIVESH monitor
+# Deploy: push this repo to GitHub, then connect repo at https://dashboard.render.com
+services:
+  - type: web
+    name: parivesh-monitor
+    env: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: gunicorn --bind 0.0.0.0:$PORT --workers 1 --threads 2 web_monitor:app
+    envVars:
+      - key: PHONE_NUMBER
+        sync: false
+      - key: TWILIO_ACCOUNT_SID
+        sync: false
+      - key: TWILIO_AUTH_TOKEN
+        sync: false
+      - key: TWILIO_FROM_NUMBER
+        sync: false
+      - key: CHECK_INTERVAL_SECONDS
+        value: 60
