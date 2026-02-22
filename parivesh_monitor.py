@@ -208,6 +208,24 @@ def run_check() -> None:
     prev_agenda_items = last.get("agenda_items", [])
     prev_mom_items = last.get("mom_items", [])
 
+    # Normalize item to a stable key for comparison (avoids false "new" from timestamps/order)
+    def item_key(i: dict) -> tuple:
+        return (i.get("state", ""), (i.get("text") or "")[:120].strip())
+
+    prev_agenda_keys = {item_key(i) for i in prev_agenda_items}
+    prev_mom_keys = {item_key(i) for i in prev_mom_items}
+
+    # Only trigger when there is at least one genuinely NEW item (not on fingerprint change).
+    # Skip alert on first run (no previous state) so we don't spam for existing content.
+    had_prev_agenda = prev_agenda_fp != "" or len(prev_agenda_items) > 0
+    had_prev_mom = prev_mom_fp != "" or len(prev_mom_items) > 0
+
+    new_agenda_items = [i for i in agenda_items if item_key(i) not in prev_agenda_keys]
+    new_mom_items = [i for i in mom_items if item_key(i) not in prev_mom_keys]
+
+    new_agenda = had_prev_agenda and len(new_agenda_items) > 0
+    new_mom = had_prev_mom and len(new_mom_items) > 0
+
     current = {
         "agenda_fingerprint": agenda_fp,
         "mom_fingerprint": mom_fp,
@@ -216,36 +234,26 @@ def run_check() -> None:
     }
     save_last_state(current)
 
-    # Detect new: fingerprint changed or new items for our states
-    new_agenda = agenda_fp != prev_agenda_fp or any(
-        i not in prev_agenda_items for i in agenda_items
-    )
-    new_mom = mom_fp != prev_mom_fp or any(
-        i not in prev_mom_items for i in mom_items
-    )
-
-    # Build clear lines: "State - SEIAA - agenda" / "State - SEIAA - MoM"
-    def states_from_items(items: List[dict]) -> List[str]:
-        """Unique state names from items that have state set; else all monitored states (TN, KA, TS order)."""
-        states = [i["state"] for i in items if i.get("state")]
-        if states:
-            seen = set()
-            ordered = []
-            for s in STATES_TO_MONITOR:
-                if s in states and s not in seen:
-                    ordered.append(s)
-                    seen.add(s)
-            for s in states:
-                if s not in seen:
-                    ordered.append(s)
-            return ordered
-        return list(STATES_TO_MONITOR)
+    # Build clear lines: "State - SEIAA - agenda" / "State - SEIAA - MoM" only for newly added items
+    def states_from_new_items(items: List[dict]) -> List[str]:
+        seen = set()
+        ordered = []
+        for s in STATES_TO_MONITOR:
+            if s in [i.get("state") for i in items if i.get("state")] and s not in seen:
+                ordered.append(s)
+                seen.add(s)
+        for i in items:
+            st = (i.get("state") or "").strip()
+            if st and st not in seen:
+                ordered.append(st)
+                seen.add(st)
+        return ordered
 
     if new_agenda:
-        for state in states_from_items(agenda_items):
+        for state in states_from_new_items(new_agenda_items):
             new_highlights.append(f"{state} - SEIAA - agenda")
     if new_mom:
-        for state in states_from_items(mom_items):
+        for state in states_from_new_items(new_mom_items):
             new_highlights.append(f"{state} - SEIAA - MoM")
 
     # Send SMS only when new agenda or MoM is detected (24/7 monitoring, alert only on change)
