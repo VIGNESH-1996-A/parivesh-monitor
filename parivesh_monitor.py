@@ -224,17 +224,34 @@ def run_check() -> None:
         i not in prev_mom_items for i in mom_items
     )
 
+    # Build clear lines: "State - SEIAA - agenda" / "State - SEIAA - MoM"
+    def states_from_items(items: List[dict]) -> List[str]:
+        """Unique state names from items that have state set; else all monitored states (TN, KA, TS order)."""
+        states = [i["state"] for i in items if i.get("state")]
+        if states:
+            seen = set()
+            ordered = []
+            for s in STATES_TO_MONITOR:
+                if s in states and s not in seen:
+                    ordered.append(s)
+                    seen.add(s)
+            for s in states:
+                if s not in seen:
+                    ordered.append(s)
+            return ordered
+        return list(STATES_TO_MONITOR)
+
     if new_agenda:
-        new_highlights.append(
-            "PARIVESH 2.0: New EC Agenda (TN/Karnataka/Telangana). Check: " + AGENDA_LIST_URL
-        )
+        for state in states_from_items(agenda_items):
+            new_highlights.append(f"{state} - SEIAA - agenda")
     if new_mom:
-        new_highlights.append(
-            "PARIVESH 2.0: New EC MoM (TN/Karnataka/Telangana). Check: " + MOM_LIST_URL
-        )
+        for state in states_from_items(mom_items):
+            new_highlights.append(f"{state} - SEIAA - MoM")
 
     if new_highlights:
-        body = " | ".join(new_highlights)[:1600]
+        body = "PARIVESH 2.0:\n" + "\n".join(new_highlights)
+        if len(body) > 1600:
+            body = body[:1597] + "..."
         send_sms(body)
     else:
         print("No new agenda/MoM updates detected for TN, KA, TS.")
