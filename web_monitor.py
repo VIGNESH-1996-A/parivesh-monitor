@@ -53,6 +53,9 @@ HTML_PAGE = """
   <div class="card">
     <h1>PARIVESH EC Monitor</h1>
     <p>TN, Karnataka, Telangana — Agenda & MoM → SMS to 9940944929</p>
+    <p class="meta" style="margin-bottom: 12px;">
+      <strong>24×7 monitoring.</strong> You receive an automated SMS from Twilio <strong>only when</strong> a new agenda or minutes (MoM) is uploaded on PARIVESH for these states.
+    </p>
     <p>
       <span class="badge badge-{{ badge }}">{{ status_label }}</span>
     </p>

@@ -10,9 +10,9 @@ Sends an **SMS to 9940944929** whenever a new **Agenda** or **Minutes of Meeting
 
 ## How it works
 
-1. The script periodically fetches the PARIVESH 2.0 pages (agenda and MoM lists) and looks for new or changed content.
+1. **24×7 monitoring:** The service runs continuously and periodically checks the PARIVESH 2.0 pages (agenda and MoM lists).
 2. It filters for Tamil Nadu, Karnataka, and Telangana and compares with the last saved state.
-3. If it detects a change (new or updated agenda/MoM), it sends an SMS to your number via Twilio.
+3. **SMS only when new:** You receive an automated Twilio SMS **only when** a new agenda or minutes (MoM) is uploaded—not on every check.
 
 ## Setup
 

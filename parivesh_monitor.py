@@ -248,6 +248,7 @@ def run_check() -> None:
         for state in states_from_items(mom_items):
             new_highlights.append(f"{state} - SEIAA - MoM")
 
+    # Send SMS only when new agenda or MoM is detected (24/7 monitoring, alert only on change)
     if new_highlights:
         body = "PARIVESH 2.0:\n" + "\n".join(new_highlights)
         if len(body) > 1600:
