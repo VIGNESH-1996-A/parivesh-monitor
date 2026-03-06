@@ -14,6 +14,14 @@ BASE_URL = "https://parivesh.nic.in"
 AGENDA_LIST_URL = "https://parivesh.nic.in/#/ec-agenda-list"
 MOM_LIST_URL = "https://parivesh.nic.in/#/ec-mom-list"
 
+# Public APIs discovered from PARIVESH 2.0
+STATE_LIST_URL = f"{BASE_URL}/parivesh_api/trackYourProposal/getListOfAllState"
+AGENDAMOM_API_BASE = f"{BASE_URL}/agendamom/getAgendaMomDocumentByCommitteeV2"
+
+# Committees and reference types to query – we filter by state afterward
+AGENDAMOM_COMMITTEES = ["SEIAA", "SEAC", "EAC"]
+AGENDAMOM_REF_TYPES = ["AGENDA", "MOM"]
+
 # States to monitor (Tamil Nadu, Karnataka, Telangana)
 STATES_TO_MONITOR = [
     "Tamil Nadu",
