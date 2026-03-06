@@ -123,8 +123,19 @@ def index():
 
 @app.route("/ping")
 def ping():
-    """Keep-alive endpoint for cron; also returns OK for health checks."""
-    return "OK", 200
+    """Cron/health endpoint: also runs one monitor cycle so Last check updates even if threads sleep."""
+    global last_check_time, last_error, is_running
+    try:
+        import parivesh_monitor as pm
+
+        pm.run_check()
+        last_check_time = datetime.utcnow()
+        last_error = None
+        is_running = True
+        return "OK", 200
+    except Exception as e:
+        last_error = str(e)
+        return f"ERROR: {e}", 500
 
 
 def start_background_monitor():
