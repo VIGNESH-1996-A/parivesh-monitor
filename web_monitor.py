@@ -7,7 +7,7 @@ from __future__ import annotations
 import os
 import threading
 import time
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 
 from flask import Flask, render_template_string
@@ -111,11 +111,16 @@ def save_last_alert(text: str):
 @app.route("/")
 def index():
     load_last_alert()
+    if last_check_time:
+        ist_time = last_check_time + timedelta(hours=5, minutes=30)
+        last_str = ist_time.strftime("%Y-%m-%d %H:%M IST")
+    else:
+        last_str = "Never"
     return render_template_string(
         HTML_PAGE,
         status_label="Running" if is_running else "Starting…",
         badge="running" if is_running else "stopped",
-        last_check=last_check_time.strftime("%Y-%m-%d %H:%M UTC") if last_check_time else "Never",
+        last_check=last_str,
         last_alert=last_alert,
         last_error=last_error,
     )
